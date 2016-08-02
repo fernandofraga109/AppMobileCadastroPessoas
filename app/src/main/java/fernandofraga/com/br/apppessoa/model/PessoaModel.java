@@ -5,6 +5,7 @@ package fernandofraga.com.br.apppessoa.model;
  */
 public class PessoaModel {
 
+    //teste de commit
     private Integer codigo;
     private String  nome;
     private String  endereco;
