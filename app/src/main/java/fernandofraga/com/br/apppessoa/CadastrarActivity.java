@@ -1,10 +1,14 @@
 package fernandofraga.com.br.apppessoa;
 
 import android.app.DatePickerDialog;
+import android.app.ProgressDialog;
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.os.AsyncTask;
+import android.os.StrictMode;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -15,17 +19,23 @@ import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.Spinner;
 
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.web.client.RestTemplate;
+
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Locale;
 
+import fernandofraga.com.br.apppessoa.ClientWebServices.ServiceClient;
+import fernandofraga.com.br.apppessoa.Uteis.HttpRequestTask;
 import fernandofraga.com.br.apppessoa.Uteis.Uteis;
 import fernandofraga.com.br.apppessoa.model.EstadoCivilModel;
+import fernandofraga.com.br.apppessoa.model.Pessoa;
 import fernandofraga.com.br.apppessoa.model.PessoaModel;
 import fernandofraga.com.br.apppessoa.repository.PessoaRepository;
 
-public class CadastrarActivity extends AppCompatActivity {
+public class CadastrarActivity extends AppCompatActivity  {
 
 
     /*COMPONENTES DA TELA*/
@@ -39,6 +49,10 @@ public class CadastrarActivity extends AppCompatActivity {
     CheckBox checkBoxRegistroAtivo;
     Button buttonSalvar;
     Button buttonVoltar;
+    // Progress Dialog Object
+    ProgressDialog prgDialog;
+    Pessoa pessoa;
+
 
     //CRIA POPUP COM O CALENDÁRIO
     DatePickerDialog datePickerDialogDataNascimento;
@@ -61,6 +75,23 @@ public class CadastrarActivity extends AppCompatActivity {
 
         //CARREGA AS OPÇÕES DE ESTADO CIVIL
         this.CarregaEstadosCivis();
+
+        prgDialog = new ProgressDialog(this);
+        // SETA MENSAGEM DA DIALOG
+        prgDialog.setMessage("Aguarde...");
+        // NAO PERMITE FECHAR A DIALOG
+        prgDialog.setCancelable(false);
+
+
+        int SDK_INT = android.os.Build.VERSION.SDK_INT;
+        if (SDK_INT > 8)
+        {
+            StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder()
+                    .permitAll().build();
+            StrictMode.setThreadPolicy(policy);
+            //your codes here
+
+        }
     }
 
     //VINCULA OS COMPONENTES DA TELA COM OS DA ATIVIDADE
@@ -161,6 +192,8 @@ public class CadastrarActivity extends AppCompatActivity {
     //VALIDA OS CAMPOS E SALVA AS INFORMAÇÕES NO BANCO DE DADOS
     protected void Salvar_onClick() {
 
+
+
         if (editTextNome.getText().toString().trim().equals("")) {
 
             Uteis.Alert(this, this.getString(R.string.nome_obrigatorio));
@@ -184,20 +217,26 @@ public class CadastrarActivity extends AppCompatActivity {
         } else {
 
 
-            /*CRIANDO UM OBJETO PESSOA*/
+            /*CRIANDO UM OBJETO PESSOA PARA GRAVAR NO SQLLITE e linha de baixo webservices*/
             PessoaModel pessoaModel = new PessoaModel();
+            this.pessoa = new Pessoa();
 
             /*SETANDO O VALOR DO CAMPO NOME*/
             pessoaModel.setNome(editTextNome.getText().toString().trim());
+            this.pessoa.setNome(editTextNome.getText().toString().trim());
+
 
             /*SETANDO O ENDEREÇO*/
             pessoaModel.setEndereco(editTextEndereco.getText().toString().trim());
 
-            /*SETANDO O SEXO*/
-            if (radioButtonMasculino.isChecked())
+            /*SETANDO O SEXO para gravar no sqllite e enviar para o webservices*/
+            if (radioButtonMasculino.isChecked()) {
                 pessoaModel.setSexo("M");
-            else
+                this.pessoa.setSexo("M");
+            } else {
                 pessoaModel.setSexo("F");
+                this.pessoa.setSexo("F");
+            }
 
             /*SETANDO A DATA DE NASCIMENTO*/
             pessoaModel.setDataNascimento(editTextDataNascimento.getText().toString().trim());
@@ -216,17 +255,42 @@ public class CadastrarActivity extends AppCompatActivity {
             if (checkBoxRegistroAtivo.isChecked())
                 pessoaModel.setRegistroAtivo((byte) 1);
 
-            /*SALVANDO UM NOVO REGISTRO*/
-            new PessoaRepository(this).Salvar(pessoaModel);
 
-            /*MENSAGEM DE SUCESSO!*/
-            Uteis.Alert(this, this.getString(R.string.registro_salvo_sucesso));
+            /*CHAMA A TELA DE AGUARDAR*/
+            prgDialog.show();
 
-            LimparCampos();
+            /*CONSUME O CADASTRAR DO WEBSERVICES*/
+            CadastrarPessoasTask weatherTask = new CadastrarPessoasTask();
+            weatherTask.execute();
+
+            /*SALVA NO SQL LITE*/
+            //new PessoaRepository(this).Salvar(pessoaModel);
+
+
         }
 
 
     }
+
+    public class CadastrarPessoasTask extends AsyncTask<String, Void, String[]> {
+
+        @Override
+        protected String[] doInBackground(String... params) {
+            RestTemplate clientRest = new RestTemplate();
+            clientRest.getMessageConverters().add(new MappingJackson2HttpMessageConverter());
+            clientRest.postForLocation(Uteis.UrlWebServices() + "cadastrar", getPessoa());
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(String[] strings) {
+            prgDialog.hide();
+            Uteis.Alert(getContext(), getString(R.string.registro_salvo_sucesso));
+            LimparCampos();
+            super.onPostExecute(strings);
+        }
+    }
+
 
     //LIMPA OS CAMPOS APÓS SALVAR AS INFORMAÇÕES
     protected void LimparCampos() {
@@ -238,6 +302,7 @@ public class CadastrarActivity extends AppCompatActivity {
 
         editTextDataNascimento.setText(null);
         checkBoxRegistroAtivo.setChecked(false);
+        this.setPessoa(null);
     }
 
     //DIZ QUAL A LOCALIZAÇÃO PARA TRADUZIR OS TEXTOS DO CALENDÁRIO.
@@ -271,4 +336,19 @@ public class CadastrarActivity extends AppCompatActivity {
         spinnerEstadoCivil.setAdapter(arrayAdapter);
 
     }
+
+
+    public ProgressDialog getPrgDialog() {
+        return this.prgDialog;
+    }
+    public CadastrarActivity getContext() {
+        return this;
+    }
+
+    public void setPessoa(Pessoa pessoa) {
+        this.pessoa = pessoa;
+    }
+
+    public Pessoa getPessoa() {return pessoa;}
+
 }

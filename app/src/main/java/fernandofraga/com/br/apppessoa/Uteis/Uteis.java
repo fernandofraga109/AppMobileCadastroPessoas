@@ -27,4 +27,8 @@ public class Uteis {
         alertDialog.show();
 
     }
+
+    public static String UrlWebServices() {
+        return "http://192.168.1.126:8081/WebServiceRest/rest/service/";
+    }
 }
